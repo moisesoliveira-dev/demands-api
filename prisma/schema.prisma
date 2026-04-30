@@ -1,0 +1,111 @@
+// Prisma schema for demands-api (SQLite for dev — swap provider to postgresql for prod)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// NOTE: SQLite has no native enums or String[]. Enum-like fields are validated at the application
+// layer (see src/common/permissions.ts and DTO validators). customPermissions stored as JSON string.
+
+model User {
+  id                 String    @id @default(cuid())
+  nome               String
+  email              String    @unique
+  senhaHash          String
+  cargo              String
+  setor              String
+  role               String    // 'admin' | 'supervisor' | 'operador' | 'visualizador'
+  customPermissions  String    @default("[]") // JSON-encoded string[]
+  avatar             String?
+  avatarUrl          String?
+  ativo              Boolean   @default(true)
+  criadoEm           DateTime  @default(now())
+  ultimoAcesso       DateTime?
+
+  sessions           ChatSession[]
+  notificacoes       Notificacao[]
+}
+
+model Setor {
+  id          String   @id @default(cuid())
+  nome        String   @unique
+  descricao   String   @default("")
+  responsavel String
+  ativo       Boolean  @default(true)
+  criadoEm    DateTime @default(now())
+}
+
+model Demanda {
+  id              String   @id @default(cuid())
+  titulo          String
+  descricao       String
+  prioridade      Int
+  status          String   // 'pendente' | 'em_andamento' | 'concluido' | 'bloqueado'
+  setor           String
+  responsavel     String
+  ordem           Int      @default(0)
+  motivoBloqueio  String?
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  historico       HistoricoAuditoria[]
+  notificacoes    Notificacao[]
+
+  @@index([status])
+  @@index([setor])
+  @@index([responsavel])
+  @@index([ordem])
+}
+
+model HistoricoAuditoria {
+  id          String   @id @default(cuid())
+  demandaId   String
+  de          String
+  para        String
+  responsavel String
+  motivo      String?
+  timestamp   DateTime @default(now())
+
+  demanda     Demanda  @relation(fields: [demandaId], references: [id], onDelete: Cascade)
+
+  @@index([demandaId])
+}
+
+model Notificacao {
+  id          String   @id @default(cuid())
+  usuarioId   String?
+  demandaId   String?
+  titulo      String
+  mensagem    String
+  prioridade  Int
+  lida        Boolean  @default(false)
+  timestamp   DateTime @default(now())
+
+  usuario     User?    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  demanda     Demanda? @relation(fields: [demandaId], references: [id], onDelete: SetNull)
+
+  @@index([usuarioId])
+  @@index([timestamp])
+}
+
+model ChatSession {
+  id           String   @id @default(cuid())
+  usuarioId    String
+  titulo       String   @default("Nova triagem")
+  step         String   @default("descricao")
+  status       String   @default("andamento")
+  draft        String   @default("{}")  // JSON
+  messages     String   @default("[]")  // JSON
+  criadaEm     DateTime @default(now())
+  atualizadaEm DateTime @updatedAt
+
+  usuario      User     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([atualizadaEm])
+}
