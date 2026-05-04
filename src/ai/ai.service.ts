@@ -11,7 +11,7 @@ export class AiService {
 
     async proxy(
         path: string,
-        method: 'GET' | 'POST',
+        method: 'GET' | 'POST' | 'DELETE',
         authorizationHeader: string,
         body?: unknown,
     ): Promise<unknown> {
@@ -33,6 +33,8 @@ export class AiService {
                 throw new InternalServerErrorException(`Serviço de IA retornou ${res.status}: ${text}`);
             }
 
+            // 204 / 205 não têm body
+            if (res.status === 204 || res.status === 205) return null;
             return res.json();
         } catch (err) {
             if (err instanceof InternalServerErrorException) throw err;

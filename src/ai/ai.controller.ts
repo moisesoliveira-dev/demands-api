@@ -1,5 +1,5 @@
 import {
-    Body, Controller, Get, HttpCode, Param, Post, Request,
+    Body, Controller, Delete, Get, HttpCode, Param, Post, Request,
 } from '@nestjs/common';
 import { AiService } from './ai.service.js';
 
@@ -32,10 +32,48 @@ export class AiController {
         return this.ai.proxy('/api/relatorios/perguntar', 'POST', bearerOf(req), body);
     }
 
-    @Post('triagem/sugestao')
+    // ─── Triagem conversacional ──────────────────────────────────────────────
+
+    @Get('triagem/sessions')
+    listTriagemSessions(@Request() req: AuthedRequest) {
+        return this.ai.proxy('/api/triagem/sessions', 'GET', bearerOf(req));
+    }
+
+    @Post('triagem/sessions')
+    @HttpCode(201)
+    createTriagemSession(@Request() req: AuthedRequest, @Body() body: unknown) {
+        return this.ai.proxy('/api/triagem/sessions', 'POST', bearerOf(req), body);
+    }
+
+    @Get('triagem/sessions/:id')
+    getTriagemSession(@Request() req: AuthedRequest, @Param('id') id: string) {
+        return this.ai.proxy(`/api/triagem/sessions/${id}`, 'GET', bearerOf(req));
+    }
+
+    @Delete('triagem/sessions/:id')
+    @HttpCode(204)
+    deleteTriagemSession(@Request() req: AuthedRequest, @Param('id') id: string) {
+        return this.ai.proxy(`/api/triagem/sessions/${id}`, 'DELETE', bearerOf(req));
+    }
+
+    @Post('triagem/sessions/:id/message')
     @HttpCode(200)
-    triagemSugestao(@Request() req: AuthedRequest, @Body() body: unknown) {
-        return this.ai.proxy('/api/triagem/sugestao', 'POST', bearerOf(req), body);
+    sendTriagemMessage(
+        @Request() req: AuthedRequest,
+        @Param('id') id: string,
+        @Body() body: unknown,
+    ) {
+        return this.ai.proxy(`/api/triagem/sessions/${id}/message`, 'POST', bearerOf(req), body);
+    }
+
+    @Post('triagem/sessions/:id/criar')
+    @HttpCode(200)
+    confirmarTriagem(
+        @Request() req: AuthedRequest,
+        @Param('id') id: string,
+        @Body() body: unknown,
+    ) {
+        return this.ai.proxy(`/api/triagem/sessions/${id}/criar`, 'POST', bearerOf(req), body);
     }
 
     @Post('agents/:agentId/run')
@@ -58,3 +96,4 @@ export class AiController {
         return this.ai.proxy(`/api/teams/${teamId}/run`, 'POST', bearerOf(req), body);
     }
 }
+
