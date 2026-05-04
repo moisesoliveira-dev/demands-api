@@ -38,4 +38,10 @@ export class NotificacoesController {
     limpar(@CurrentUser() user: AuthUserPayload) {
         this.service.limpar(user.sub);
     }
+
+    @Delete(':id')
+    @HttpCode(204)
+    async remover(@Param('id') id: string, @CurrentUser() user: AuthUserPayload) {
+        await this.service.remover(id, user.sub);
+    }
 }

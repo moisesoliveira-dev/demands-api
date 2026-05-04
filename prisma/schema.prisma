@@ -80,9 +80,11 @@ model Notificacao {
   id          String   @id @default(cuid())
   usuarioId   String?
   demandaId   String?
+  tipo        String   @default("sistema")
   titulo      String
   mensagem    String
-  prioridade  Int
+  prioridade  Int      @default(3)
+  acao        String?
   lida        Boolean  @default(false)
   timestamp   DateTime @default(now())
 

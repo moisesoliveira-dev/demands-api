@@ -69,4 +69,45 @@ export class AuthService {
             permissions: resolvePermissions(u.role, u.customPermissions ?? []),
         };
     }
+
+    async atualizarMeuPerfil(
+        userId: string,
+        input: { nome?: string; email?: string; cargo?: string; avatar?: string; avatarUrl?: string },
+    ): Promise<PublicUser> {
+        const row = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!row) throw new UnauthorizedException('Usuário não encontrado');
+
+        if (input.email && input.email.toLowerCase() !== row.email.toLowerCase()) {
+            const existing = await this.prisma.user.findFirst({
+                where: { email: input.email.toLowerCase(), NOT: { id: userId } },
+            });
+            if (existing) throw new UnauthorizedException('E-mail já está em uso');
+        }
+
+        const updated = await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                ...(input.nome !== undefined && { nome: input.nome }),
+                ...(input.email !== undefined && { email: input.email.toLowerCase() }),
+                ...(input.cargo !== undefined && { cargo: input.cargo }),
+                ...(input.avatar !== undefined && { avatar: input.avatar }),
+                ...(input.avatarUrl !== undefined && { avatarUrl: input.avatarUrl }),
+            },
+        });
+        return this.toPublic(toUser(updated));
+    }
+
+    async alterarSenha(userId: string, senhaAtual: string, novaSenha: string): Promise<void> {
+        const row = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!row) throw new UnauthorizedException('Usuário não encontrado');
+
+        const ok = await bcrypt.compare(senhaAtual, row.senhaHash);
+        if (!ok) throw new UnauthorizedException('Senha atual inválida');
+
+        const novoHash = await bcrypt.hash(novaSenha, 10);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { senhaHash: novoHash },
+        });
+    }
 }

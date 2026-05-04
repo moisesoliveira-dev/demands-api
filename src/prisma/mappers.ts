@@ -57,13 +57,24 @@ export interface HistoricoAuditoria {
     timestamp: string;
 }
 
+export type NotificacaoTipo =
+    | 'demanda_criada'
+    | 'demanda_atualizada'
+    | 'demanda_bloqueada'
+    | 'demanda_concluida'
+    | 'demanda_atribuida'
+    | 'sistema'
+    | 'alerta';
+
 export interface NotificacaoRecord {
     id: string;
     usuarioId: string | null;
     demandaId?: string;
+    tipo: NotificacaoTipo;
     titulo: string;
     mensagem: string;
     prioridade: Prioridade;
+    acao?: string;
     lida: boolean;
     timestamp: string;
 }
@@ -187,9 +198,11 @@ export function toNotificacao(p: PrismaNotificacao): NotificacaoRecord {
         id: p.id,
         usuarioId: p.usuarioId,
         demandaId: p.demandaId ?? undefined,
+        tipo: (p.tipo as NotificacaoTipo) ?? 'sistema',
         titulo: p.titulo,
         mensagem: p.mensagem,
         prioridade: p.prioridade as Prioridade,
+        acao: p.acao ?? undefined,
         lida: p.lida,
         timestamp: iso(p.timestamp)!,
     };

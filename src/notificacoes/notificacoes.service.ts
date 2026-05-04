@@ -26,9 +26,11 @@ export class NotificacoesService {
             data: {
                 usuarioId: input.usuarioId ?? null,
                 demandaId: input.demandaId,
+                tipo: input.tipo ?? 'sistema',
                 titulo: input.titulo,
                 mensagem: input.mensagem,
-                prioridade: input.prioridade,
+                prioridade: input.prioridade ?? 3,
+                acao: input.acao,
                 lida: false,
             },
         });
@@ -57,5 +59,13 @@ export class NotificacoesService {
 
     async limpar(usuarioId: string) {
         await this.prisma.notificacao.deleteMany({ where: { usuarioId } });
+    }
+
+    async remover(id: string, usuarioId: string): Promise<void> {
+        const row = await this.prisma.notificacao.findFirst({
+            where: { id, OR: [{ usuarioId }, { usuarioId: null }] },
+        });
+        if (!row) throw new NotFoundException('Notificação não encontrada');
+        await this.prisma.notificacao.delete({ where: { id } });
     }
 }
