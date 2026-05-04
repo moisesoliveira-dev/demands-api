@@ -11,6 +11,7 @@ import { NotificacoesModule } from './notificacoes/notificacoes.module.js';
 import { TriagemModule } from './triagem/triagem.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { RelatoriosModule } from './relatorios/relatorios.module.js';
+import { AiModule } from './ai/ai.module.js';
 
 import { JwtAuthGuard } from './common/jwt-auth.guard.js';
 import { PermissionsGuard } from './common/permissions.guard.js';
@@ -27,6 +28,7 @@ import { PermissionsGuard } from './common/permissions.guard.js';
     TriagemModule,
     DashboardModule,
     RelatoriosModule,
+    AiModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
