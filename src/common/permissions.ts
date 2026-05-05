@@ -46,7 +46,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
         'kanban.reorganizar', 'relatorios.visualizar', 'relatorios.exportar',
     ],
     operador: [
-        'demandas.visualizar', 'demandas.editar.proprias', 'demandas.mudar_status.proprias',
+        'demandas.criar', 'demandas.visualizar', 'demandas.editar.proprias', 'demandas.mudar_status.proprias',
         'demandas.comentar', 'demandas.anexar_arquivos', 'dashboard.visualizar',
         'kanban.visualizar',
     ],
