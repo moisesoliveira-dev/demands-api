@@ -1,10 +1,18 @@
 import {
-    Body, Controller, Delete, Get, HttpCode, Param, Post, Request,
+    Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Request,
+    UploadedFile, UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AiService } from './ai.service.js';
 
 interface AuthedRequest {
     headers: { authorization?: string };
+}
+
+interface UploadedMulterFile {
+    buffer: Buffer;
+    originalname: string;
+    mimetype: string;
 }
 
 function bearerOf(req: AuthedRequest): string {
@@ -76,6 +84,15 @@ export class AiController {
         return this.ai.proxy(`/api/triagem/sessions/${id}/criar`, 'POST', bearerOf(req), body);
     }
 
+    @Post('triagem/auto-draft')
+    @HttpCode(200)
+    autoDraft(
+        @Request() req: AuthedRequest,
+        @Body() body: { description: string },
+    ) {
+        return this.ai.proxy('/api/triagem/auto-draft', 'POST', bearerOf(req), body);
+    }
+
     @Post('agents/:agentId/run')
     @HttpCode(200)
     runAgent(
@@ -94,6 +111,78 @@ export class AiController {
         @Body() body: unknown,
     ) {
         return this.ai.proxy(`/api/teams/${teamId}/run`, 'POST', bearerOf(req), body);
+    }
+
+    // ─── Admin: Configuração / Métricas / Conhecimento ───────────────────────
+
+    @Get('admin/config')
+    getAiConfig(@Request() req: AuthedRequest) {
+        return this.ai.proxy('/api/ai/config', 'GET', bearerOf(req));
+    }
+
+    @Put('admin/config')
+    @HttpCode(200)
+    updateAiConfig(@Request() req: AuthedRequest, @Body() body: unknown) {
+        return this.ai.proxy('/api/ai/config', 'PUT', bearerOf(req), body);
+    }
+
+    @Get('admin/metrics')
+    getAiMetrics(@Request() req: AuthedRequest, @Query('days') days?: string) {
+        const q = days ? `?days=${encodeURIComponent(days)}` : '';
+        return this.ai.proxy(`/api/ai/metrics${q}`, 'GET', bearerOf(req));
+    }
+
+    @Get('admin/knowledge')
+    listKnowledge(@Request() req: AuthedRequest) {
+        return this.ai.proxy('/api/ai/knowledge', 'GET', bearerOf(req));
+    }
+
+    @Post('admin/knowledge')
+    @HttpCode(201)
+    @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+    uploadKnowledge(
+        @Request() req: AuthedRequest,
+        @UploadedFile() file: UploadedMulterFile,
+        @Body() body: { setor?: string } = {},
+    ) {
+        return this.ai.proxyUpload('/api/ai/knowledge', bearerOf(req), file, 'file', { setor: body.setor });
+    }
+
+    @Delete('admin/knowledge/:id')
+    @HttpCode(204)
+    deleteKnowledge(@Request() req: AuthedRequest, @Param('id') id: string) {
+        return this.ai.proxy(`/api/ai/knowledge/${id}`, 'DELETE', bearerOf(req));
+    }
+
+    // ─── Perfil & Memórias (Fase 2) ──────────────────────────────────────────
+
+    @Get('admin/profile')
+    getProfile(@Request() req: AuthedRequest) {
+        return this.ai.proxy('/api/ai/profile', 'GET', bearerOf(req));
+    }
+
+    @Put('admin/profile')
+    @HttpCode(200)
+    updateProfile(@Request() req: AuthedRequest, @Body() body: unknown) {
+        return this.ai.proxy('/api/ai/profile', 'PUT', bearerOf(req), body);
+    }
+
+    @Get('admin/memories')
+    listMemories(@Request() req: AuthedRequest, @Query('limit') limit?: string) {
+        const q = limit ? `?limit=${encodeURIComponent(limit)}` : '';
+        return this.ai.proxy(`/api/ai/memories${q}`, 'GET', bearerOf(req));
+    }
+
+    @Delete('admin/memories/:id')
+    @HttpCode(204)
+    deleteMemory(@Request() req: AuthedRequest, @Param('id') id: string) {
+        return this.ai.proxy(`/api/ai/memories/${id}`, 'DELETE', bearerOf(req));
+    }
+
+    @Delete('admin/memories')
+    @HttpCode(200)
+    clearMemories(@Request() req: AuthedRequest) {
+        return this.ai.proxy('/api/ai/memories', 'DELETE', bearerOf(req));
     }
 }
 
