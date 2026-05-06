@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { HttpException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -37,7 +37,7 @@ export class AiService {
             if (res.status === 204 || res.status === 205) return null;
             return res.json();
         } catch (err) {
-            if (err instanceof InternalServerErrorException) throw err;
+            if (err instanceof HttpException) throw err;
             throw new InternalServerErrorException('Serviço de IA indisponível');
         }
     }

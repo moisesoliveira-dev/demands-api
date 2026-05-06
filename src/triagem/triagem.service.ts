@@ -7,9 +7,6 @@ import type { ConfirmarDto, UpdateSessionDto } from './dto/triagem.dto.js';
 import { DemandasService } from '../demandas/demandas.service.js';
 import type { AuthUserPayload } from '../common/auth.decorators.js';
 
-const SETORES = ['Usinagem', 'Montagem', 'Pintura', 'Manutenção', 'Qualidade', 'Expedição'];
-const RESPONSAVEIS = ['João Silva', 'Maria Santos', 'Pedro Oliveira', 'Ana Costa', 'Carlos Souza'];
-
 const MAX = 30;
 
 interface AgentReply {
@@ -97,7 +94,7 @@ export class TriagemService {
         const messages = [...s.messages, userMsg];
         if (!s.titulo || s.titulo === 'Nova triagem') s.titulo = texto.slice(0, 60);
 
-        const reply = this.computeNext(s, texto);
+        const reply = await this.computeNext(s, texto);
         messages.push(reply.message);
 
         const updated = await this.prisma.chatSession.update({
@@ -112,8 +109,11 @@ export class TriagemService {
         return { session: toChatSession(updated), reply };
     }
 
-    private computeNext(s: ChatSessionRecord, texto: string): AgentReply {
+    private async computeNext(s: ChatSessionRecord, texto: string): Promise<AgentReply> {
         const draft = { ...s.draft };
+        const setores = await this.listarSetoresAtivos();
+        const setorNomes = setores.map((s) => s.nome);
+        const responsaveis = this.responsaveisParaSetor(setores, draft.setor);
         const msg = (content: string, suggestions?: string[], summary?: ChatMessage['summary']): ChatMessage => ({
             id: newId('msg'),
             role: 'agent',
@@ -127,18 +127,19 @@ export class TriagemService {
             case 'descricao': {
                 draft.descricao = texto;
                 draft.titulo = texto.split(/[.\n]/)[0].slice(0, 80) || texto.slice(0, 80);
-                const sugestao = SETORES.find((set) => texto.toLowerCase().includes(set.toLowerCase()));
+                const sugestao = setorNomes.find((set) => texto.toLowerCase().includes(set.toLowerCase()));
                 if (sugestao) draft.setor = sugestao;
                 return {
-                    message: msg(`Entendi. Em qual setor essa demanda deve ser executada?`, SETORES),
+                    message: msg(`Entendi. Em qual setor essa demanda deve ser executada?`, setorNomes),
                     step: 'setor',
                     draft,
                 };
             }
             case 'setor': {
                 draft.setor = texto.trim();
+                const responsaveisDoSetor = this.responsaveisParaSetor(setores, draft.setor);
                 return {
-                    message: msg(`Quem deve ficar responsável?`, RESPONSAVEIS),
+                    message: msg(`Quem deve ficar responsável?`, responsaveisDoSetor),
                     step: 'responsavel',
                     draft,
                 };
@@ -192,6 +193,23 @@ export class TriagemService {
                     draft,
                 };
         }
+    }
+
+    private async listarSetoresAtivos(): Promise<Array<{ nome: string; responsavel: string }>> {
+        const rows = await this.prisma.setor.findMany({ where: { ativo: true }, orderBy: { criadoEm: 'asc' } });
+        return rows.map((s) => ({ nome: s.nome, responsavel: s.responsavel })).filter((s) => s.nome);
+    }
+
+    private responsaveisParaSetor(
+        setores: Array<{ nome: string; responsavel: string }>,
+        setor?: string,
+    ): string[] {
+        const base = setor
+            ? setores.filter((s) => s.nome.toLowerCase() === setor.toLowerCase())
+            : setores;
+        const nomes = base.map((s) => s.responsavel).filter(Boolean);
+        const fallback = setores.map((s) => s.responsavel).filter(Boolean);
+        return [...new Set(nomes.length ? nomes : fallback)];
     }
 
     async confirmar(id: string, usuarioId: string, dto: ConfirmarDto, _actor: AuthUserPayload) {
