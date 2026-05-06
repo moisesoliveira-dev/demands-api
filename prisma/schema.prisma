@@ -1,16 +1,18 @@
-// Prisma schema for demands-api (SQLite for dev — swap provider to postgresql for prod)
+// Prisma schema for demands-api — PostgreSQL (works with local Postgres and Supabase).
+// O modo "memory" usa um Postgres efêmero (tmpfs) via docker-compose, então o schema é único.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// NOTE: SQLite has no native enums or String[]. Enum-like fields are validated at the application
-// layer (see src/common/permissions.ts and DTO validators). customPermissions stored as JSON string.
+// NOTE: enum-like fields são validados na camada de aplicação (ver src/common/permissions.ts).
+// customPermissions, draft e messages são armazenados como JSON em string para manter
+// compatibilidade com o contrato da DataStore original.
 
 model User {
   id                 String    @id @default(cuid())
