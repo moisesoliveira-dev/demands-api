@@ -25,8 +25,11 @@ RUN npm run build
     COPY --from=build /app/node_modules ./node_modules
     COPY --from=build /app/dist ./dist
     COPY --from=build /app/prisma ./prisma
+    COPY --from=build /app/scripts ./scripts
+    COPY --from=build /app/tsconfig.json ./
     COPY package.json ./
-    
+    COPY docker-entrypoint.sh ./
+    RUN chmod +x docker-entrypoint.sh
+
     EXPOSE 3000
-    # Aplica migrations (ou cria schema com db push em modo memory) antes de iniciar.
-    CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
+    CMD ["./docker-entrypoint.sh"]

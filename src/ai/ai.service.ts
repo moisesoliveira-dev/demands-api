@@ -30,7 +30,14 @@ export class AiService {
 
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
-                throw new InternalServerErrorException(`Serviço de IA retornou ${res.status}: ${text}`);
+                let detail = text;
+                try {
+                    const parsed = text ? JSON.parse(text) : null;
+                    detail = parsed?.detail ?? parsed?.message ?? text;
+                } catch {
+                    // mantém texto bruto quando o body não é JSON
+                }
+                throw new HttpException(detail || `Serviço de IA retornou ${res.status}`, res.status);
             }
 
             // 204 / 205 não têm body
@@ -80,7 +87,14 @@ export class AiService {
 
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
-                throw new InternalServerErrorException(`Serviço de IA retornou ${res.status}: ${text}`);
+                let detail = text;
+                try {
+                    const parsed = text ? JSON.parse(text) : null;
+                    detail = parsed?.detail ?? parsed?.message ?? text;
+                } catch {
+                    // mantém texto bruto quando o body não é JSON
+                }
+                throw new HttpException(detail || `Serviço de IA retornou ${res.status}`, res.status);
             }
 
             if (res.status === 204 || res.status === 205) return null;
