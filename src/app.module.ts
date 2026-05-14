@@ -12,6 +12,7 @@ import { TriagemModule } from './triagem/triagem.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { RelatoriosModule } from './relatorios/relatorios.module.js';
 import { AiModule } from './ai/ai.module.js';
+import { SettingsModule } from './settings/settings.module.js';
 
 import { JwtAuthGuard } from './common/jwt-auth.guard.js';
 import { PermissionsGuard } from './common/permissions.guard.js';
@@ -29,6 +30,7 @@ import { PermissionsGuard } from './common/permissions.guard.js';
     DashboardModule,
     RelatoriosModule,
     AiModule,
+    SettingsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

@@ -20,6 +20,7 @@ export type Permission =
     | 'configuracoes.usuarios'
     | 'configuracoes.setores'
     | 'configuracoes.permissoes'
+    | 'configuracoes.sistema'
     | 'relatorios.visualizar'
     | 'relatorios.exportar'
     | 'auditoria.visualizar'
@@ -35,6 +36,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
         'demandas.visualizar_todas', 'dashboard.visualizar', 'dashboard.metricas_gerenciais',
         'kanban.visualizar', 'kanban.reorganizar', 'configuracoes.acessar',
         'configuracoes.usuarios', 'configuracoes.setores', 'configuracoes.permissoes',
+        'configuracoes.sistema',
         'relatorios.visualizar', 'relatorios.exportar', 'auditoria.visualizar',
         'notificacoes.gerenciar',
     ],

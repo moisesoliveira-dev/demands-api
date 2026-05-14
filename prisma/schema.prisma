@@ -113,3 +113,12 @@ model ChatSession {
   @@index([usuarioId])
   @@index([atualizadaEm])
 }
+
+model AppSetting {
+  key       String   @id
+  value     String   @default("")
+  updatedAt DateTime @default(now()) @updatedAt
+  updatedBy String?
+
+  @@map("app_settings")
+}
