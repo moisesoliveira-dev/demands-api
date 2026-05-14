@@ -1,9 +1,6 @@
 #!/bin/sh
 set -e
 
-echo "→ Baseline migration (idempotente — ignora se já registrada)..."
-npx prisma migrate resolve --applied 20260506144955_init || true
-
 echo "→ Aplicando migrations pendentes..."
 npx prisma migrate deploy
 
