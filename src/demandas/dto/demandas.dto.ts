@@ -1,19 +1,20 @@
 import {
-    ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength,
+    ArrayMinSize, IsArray, IsIn, IsOptional, IsString, MinLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsPrioridade, IsOptionalPrioridade, IsTitulo } from '../../common/validators';
 
 export const DEMAND_STATUS = ['pendente', 'em_andamento', 'concluido', 'bloqueado'] as const;
 export type DemandStatusDto = (typeof DEMAND_STATUS)[number];
 
 export class CreateDemandaDto {
-    @IsString() @MinLength(3)
+    @IsTitulo()
     titulo!: string;
 
     @IsString()
     descricao!: string;
 
-    @IsInt() @Min(1) @Max(5)
+    @IsPrioridade()
     prioridade!: 1 | 2 | 3 | 4 | 5;
 
     @IsIn(DEMAND_STATUS)
@@ -36,7 +37,7 @@ export class UpdateDemandaDto {
     @IsOptional() @IsString()
     descricao?: string;
 
-    @IsOptional() @IsInt() @Min(1) @Max(5)
+    @IsOptionalPrioridade()
     prioridade?: 1 | 2 | 3 | 4 | 5;
 
     @IsOptional() @IsIn(DEMAND_STATUS)

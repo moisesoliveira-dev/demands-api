@@ -1,4 +1,5 @@
-import { IsArray, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsArray, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsPrioridade } from '../../common/validators';
 
 export const STEPS = ['descricao', 'setor', 'responsavel', 'prioridade', 'confirmacao', 'criada'] as const;
 export type StepDto = (typeof STEPS)[number];
@@ -43,6 +44,6 @@ export class ConfirmarDto {
     @IsString() descricao!: string;
     @IsString() setor!: string;
     @IsString() responsavel!: string;
-    @IsInt() @Min(1) @Max(5)
+    @IsPrioridade()
     prioridade!: 1 | 2 | 3 | 4 | 5;
 }

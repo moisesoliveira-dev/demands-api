@@ -1,4 +1,5 @@
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsOptionalPrioridade } from '../../common/validators';
 
 export const NOTIFICACAO_TIPOS = [
     'demanda_criada',
@@ -27,7 +28,7 @@ export class CreateNotificacaoDto {
     @IsString()
     mensagem!: string;
 
-    @IsOptional() @IsInt() @Min(1) @Max(5)
+    @IsOptionalPrioridade()
     prioridade?: 1 | 2 | 3 | 4 | 5;
 
     @IsOptional() @IsString()

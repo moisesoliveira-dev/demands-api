@@ -87,20 +87,25 @@ export class TriagemService {
     }
 
     async reply(id: string, usuarioId: string, texto: string): Promise<{ session: ChatSessionRecord; reply: AgentReply }> {
-        const s = await this.get(id, usuarioId);
-        const now = new Date().toISOString();
+        const session = await this.get(id, usuarioId);
+        const userMsg: ChatMessage = {
+            id: newId('msg'),
+            role: 'user',
+            content: texto,
+            timestamp: new Date().toISOString(),
+        };
+        const messages = [...session.messages, userMsg];
+        if (!session.titulo || session.titulo === 'Nova triagem') {
+            session.titulo = texto.slice(0, 60);
+        }
 
-        const userMsg: ChatMessage = { id: newId('msg'), role: 'user', content: texto, timestamp: now };
-        const messages = [...s.messages, userMsg];
-        if (!s.titulo || s.titulo === 'Nova triagem') s.titulo = texto.slice(0, 60);
-
-        const reply = await this.computeNext(s, texto);
+        const reply = await this.computeNext(session, texto);
         messages.push(reply.message);
 
         const updated = await this.prisma.chatSession.update({
             where: { id },
             data: {
-                titulo: s.titulo,
+                titulo: session.titulo,
                 step: reply.step,
                 draft: JSON.stringify(reply.draft),
                 messages: JSON.stringify(messages),
@@ -109,11 +114,10 @@ export class TriagemService {
         return { session: toChatSession(updated), reply };
     }
 
-    private async computeNext(s: ChatSessionRecord, texto: string): Promise<AgentReply> {
-        const draft = { ...s.draft };
+    private async computeNext(session: ChatSessionRecord, texto: string): Promise<AgentReply> {
+        const draft = { ...session.draft };
         const setores = await this.listarSetoresAtivos();
-        const setorNomes = setores.map((s) => s.nome);
-        const responsaveis = this.responsaveisParaSetor(setores, draft.setor);
+        const setorNomes = setores.map((setor) => setor.nome);
         const msg = (content: string, suggestions?: string[], summary?: ChatMessage['summary']): ChatMessage => ({
             id: newId('msg'),
             role: 'agent',
@@ -123,7 +127,7 @@ export class TriagemService {
             summary,
         });
 
-        switch (s.step) {
+        switch (session.step) {
             case 'descricao': {
                 draft.descricao = texto;
                 draft.titulo = texto.split(/[.\n]/)[0].slice(0, 80) || texto.slice(0, 80);
@@ -197,7 +201,7 @@ export class TriagemService {
 
     private async listarSetoresAtivos(): Promise<Array<{ nome: string; responsavel: string }>> {
         const rows = await this.prisma.setor.findMany({ where: { ativo: true }, orderBy: { criadoEm: 'asc' } });
-        return rows.map((s) => ({ nome: s.nome, responsavel: s.responsavel })).filter((s) => s.nome);
+        return rows.map((row) => ({ nome: row.nome, responsavel: row.responsavel })).filter((row) => row.nome);
     }
 
     private responsaveisParaSetor(
@@ -213,9 +217,9 @@ export class TriagemService {
     }
 
     async confirmar(id: string, usuarioId: string, dto: ConfirmarDto, _actor: AuthUserPayload) {
-        const s = await this.get(id, usuarioId);
-        if (s.status === 'criada') throw new BadRequestException('Sessão já finalizada');
-        const dem = await this.demandas.create({
+        const session = await this.get(id, usuarioId);
+        if (session.status === 'criada') throw new BadRequestException('Sessão já finalizada');
+        const demanda = await this.demandas.create({
             titulo: dto.titulo,
             descricao: dto.descricao,
             setor: dto.setor,
@@ -223,10 +227,14 @@ export class TriagemService {
             prioridade: dto.prioridade,
             status: 'pendente',
         });
-        const now = new Date().toISOString();
         const messages: ChatMessage[] = [
-            ...s.messages,
-            { id: newId('msg'), role: 'agent', content: `Demanda criada com sucesso (ID ${dem.id}).`, timestamp: now },
+            ...session.messages,
+            {
+                id: newId('msg'),
+                role: 'agent',
+                content: `Demanda criada com sucesso (ID ${demanda.id}).`,
+                timestamp: new Date().toISOString(),
+            },
         ];
         const updated = await this.prisma.chatSession.update({
             where: { id },
@@ -237,6 +245,6 @@ export class TriagemService {
                 messages: JSON.stringify(messages),
             },
         });
-        return { session: toChatSession(updated), demanda: dem };
+        return { session: toChatSession(updated), demanda };
     }
 }
