@@ -1,7 +1,10 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service.js';
 import { RequirePermissions } from '../common/auth.decorators.js';
 
+@ApiTags('dashboard')
+@ApiBearerAuth('access-token')
 @Controller('dashboard')
 export class DashboardController {
     constructor(private readonly service: DashboardService) { }

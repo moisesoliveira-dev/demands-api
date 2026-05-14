@@ -2,6 +2,7 @@ import {
     Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Request,
     UploadedFile, UseInterceptors,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AiService } from './ai.service.js';
 
@@ -19,6 +20,8 @@ function bearerOf(req: AuthedRequest): string {
     return req.headers.authorization ?? '';
 }
 
+@ApiTags('ai')
+@ApiBearerAuth('access-token')
 @Controller('ai')
 export class AiController {
     constructor(private readonly ai: AiService) { }

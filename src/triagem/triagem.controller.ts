@@ -1,8 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { TriagemService } from './triagem.service.js';
 import { ConfirmarDto, ReplyDto, UpdateSessionDto } from './dto/triagem.dto.js';
 import { CurrentUser, RequirePermissions, type AuthUserPayload } from '../common/auth.decorators.js';
 
+@ApiTags('triagem')
+@ApiBearerAuth('access-token')
 @Controller('triagem/sessions')
 export class TriagemController {
     constructor(private readonly service: TriagemService) { }

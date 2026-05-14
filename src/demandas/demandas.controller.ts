@@ -1,12 +1,15 @@
 import {
     Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DemandasService } from './demandas.service.js';
 import {
     CreateDemandaDto, ListDemandasQueryDto, ReordenarDto, UpdateDemandaDto, UpdateStatusDto,
 } from './dto/demandas.dto.js';
 import { CurrentUser, RequirePermissions, type AuthUserPayload } from '../common/auth.decorators.js';
 
+@ApiTags('demandas')
+@ApiBearerAuth('access-token')
 @Controller('demandas')
 export class DemandasController {
     constructor(private readonly service: DemandasService) { }

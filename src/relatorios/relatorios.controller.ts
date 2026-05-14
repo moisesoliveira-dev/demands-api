@@ -1,5 +1,6 @@
 import { Controller, Get, Header, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { DashboardService } from '../dashboard/dashboard.service.js';
 import { RequirePermissions } from '../common/auth.decorators.js';
@@ -12,6 +13,8 @@ function csvEscape(v: unknown): string {
     return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+@ApiTags('relatorios')
+@ApiBearerAuth('access-token')
 @Controller('relatorios')
 export class RelatoriosController {
     constructor(

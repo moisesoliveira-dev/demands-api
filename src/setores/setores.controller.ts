@@ -1,8 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { SetoresService } from './setores.service.js';
 import { CreateSetorDto, UpdateSetorDto } from './dto/setores.dto.js';
 import { RequirePermissions } from '../common/auth.decorators.js';
 
+@ApiTags('setores')
+@ApiBearerAuth('access-token')
 @Controller('setores')
 export class SetoresController {
     constructor(private readonly setores: SetoresService) { }

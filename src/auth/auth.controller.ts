@@ -1,9 +1,12 @@
 import { Body, Controller, Get, HttpCode, HttpException, HttpStatus, Patch, Post } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { AlterarSenhaDto, Reenviar2FADto, UpdateMeDto, Verificar2FADto } from './dto/me.dto.js';
 import { Public, CurrentUser, type AuthUserPayload } from '../common/auth.decorators.js';
 
+@ApiTags('auth')
+@ApiBearerAuth('access-token')
 @Controller('auth')
 export class AuthController {
     constructor(private readonly auth: AuthService) { }

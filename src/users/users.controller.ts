@@ -1,8 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service.js';
 import { CreateUserDto, ToggleAtivoDto, UpdateUserDto } from './dto/users.dto.js';
 import { RequirePermissions } from '../common/auth.decorators.js';
 
+@ApiTags('users')
+@ApiBearerAuth('access-token')
 @Controller('users')
 export class UsersController {
     constructor(private readonly users: UsersService) { }

@@ -1,8 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificacoesService } from './notificacoes.service.js';
 import { CreateNotificacaoDto } from './dto/notificacoes.dto.js';
 import { CurrentUser, RequirePermissions, type AuthUserPayload } from '../common/auth.decorators.js';
 
+@ApiTags('notificacoes')
+@ApiBearerAuth('access-token')
 @Controller('notificacoes')
 export class NotificacoesController {
     constructor(private readonly service: NotificacoesService) { }
