@@ -25,15 +25,46 @@ export interface UsuarioSistemaRow {
     ussi_usua_id: number;
     ussi_sist_id: number;
     ussi_status: number;
-    ussi_responsavel: string | null;
+    ussi_responsavel: number | null;
     ussi_data_associacao: Date;
     ussi_tema: string | null;
 }
 
+/** Linha bruta da tabela `menu` em dbacesso. */
 export interface MenuRow {
     menu_id: number;
+    menu_nome: string;
+    menu_descricao: string | null;
+    menu_status: '1' | '0';
+    menu_url: string | null;
+    menu_ordem: number;
+    menu_logo: string | null;
     menu_sist_id: number;
-    menu_nome?: string;
-    menu_status?: number;
-    [key: string]: unknown;
+    menu_menu_id_pred: number | null;
+}
+
+/**
+ * Menu enriquecido com permissões CRUD do usuário
+ * (resultado do join `menu_usuario` + `menu`).
+ */
+export interface MenuComPermissaoRow extends MenuRow {
+    perf_id: number;
+    can_insert: boolean;
+    can_update: boolean;
+    can_delete: boolean;
+}
+
+/**
+ * Árvore hierárquica devolvida ao frontend. Formato compatível
+ * com `MenuItem` do PrimeNG (label/icon/routerLink/items).
+ */
+export interface MenuTreeNode {
+    id: number;
+    label: string;
+    icon: string | null;
+    routerLink: string | null;
+    order: number;
+    perfilId: number | null;
+    permissions: { insert: boolean; update: boolean; delete: boolean };
+    items: MenuTreeNode[];
 }

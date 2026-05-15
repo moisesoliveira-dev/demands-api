@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import { UsuarioCorpService } from '../dbacesso/usuario.service.js';
 import { UsuarioSistemaCorpService } from '../dbacesso/usuario-sistema.service.js';
 import { MenuUsuarioCorpService } from '../dbacesso/menu-usuario.service.js';
@@ -59,8 +60,9 @@ export class AuthService {
         const user = await this.usuarios.findByLogin(usua_login);
         if (!user) this.throw401('Credenciais inválidas', { usua_login, motivo: 'usuario_nao_encontrado' });
 
-        // padrão dgb_mes_wce: comparação em texto puro contra usua_senha
-        if (user.usua_senha !== usua_senha) {
+        // Senha em dbacesso é armazenada como SHA-1 hexadecimal (padrão CASCI).
+        const senhaHash = createHash('sha1').update(usua_senha).digest('hex');
+        if (user.usua_senha !== senhaHash) {
             this.throw401('Credenciais inválidas', { usua_login, usua_id: user.usua_id, motivo: 'senha_invalida' });
         }
 
@@ -78,7 +80,7 @@ export class AuthService {
             );
         }
 
-        const menus = await this.menus.findMenus(user.usua_id, idSistema);
+        const menus = await this.menus.findMenuTree(user.usua_id, idSistema);
         if (!menus.length) {
             this.throw401(
                 'Usuário não possui menus cadastrados para este sistema.',
@@ -127,7 +129,7 @@ export class AuthService {
             this.throw401('Acesso ao sistema revogado', { usuaId: id, idSistema, acessoStatus });
         }
 
-        const menus = await this.menus.findMenus(id, idSistema);
+        const menus = await this.menus.findMenuTree(id, idSistema);
         const role: Role = 'admin';
         const permissions = resolvePermissions(role, []);
 
