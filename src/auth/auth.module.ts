@@ -3,9 +3,11 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service.js';
 import { AuthController } from './auth.controller.js';
+import { DbacessoModule } from '../dbacesso/dbacesso.module.js';
 
 @Module({
     imports: [
+        DbacessoModule,
         JwtModule.registerAsync({
             imports: [ConfigModule],
             inject: [ConfigService],

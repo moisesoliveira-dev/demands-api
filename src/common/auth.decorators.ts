@@ -11,6 +11,10 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
 
 export interface AuthUserPayload {
     sub: string;
+    usua_id: number;
+    usua_login: string;
+    usua_nome: string;
+    usua_email: string;
     nome: string;
     email: string;
     role: import('./permissions.js').Role;

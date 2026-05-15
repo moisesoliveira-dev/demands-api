@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpException, HttpStatus, Patch, Post } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { AlterarSenhaDto, Reenviar2FADto, UpdateMeDto, Verificar2FADto } from './dto/me.dto.js';
@@ -15,7 +15,7 @@ export class AuthController {
     @Post('login')
     @HttpCode(200)
     login(@Body() dto: LoginDto) {
-        return this.auth.login(dto.email, dto.senha);
+        return this.auth.login(dto.usua_login, dto.usua_senha);
     }
 
     /** Stub: 2FA não habilitado nesta build. Retorna 501. */
@@ -38,15 +38,23 @@ export class AuthController {
         return this.auth.me(user.sub);
     }
 
+    /** Edição de perfil não suportada — dados vêm do dbacesso (somente leitura). */
     @Patch('me')
-    async atualizarMe(@CurrentUser() user: AuthUserPayload, @Body() dto: UpdateMeDto) {
-        return this.auth.atualizarMeuPerfil(user.sub, dto);
+    atualizarMe(@CurrentUser() _user: AuthUserPayload, @Body() _dto: UpdateMeDto) {
+        throw new HttpException(
+            'Perfil gerenciado pelo dbacesso (somente leitura). Solicite alterações ao administrador.',
+            HttpStatus.NOT_IMPLEMENTED,
+        );
     }
 
+    /** Troca de senha indisponível — senha gerenciada no dbacesso. */
     @Post('me/senha')
-    @HttpCode(204)
-    async alterarSenha(@CurrentUser() user: AuthUserPayload, @Body() dto: AlterarSenhaDto) {
-        await this.auth.alterarSenha(user.sub, dto.senhaAtual, dto.novaSenha);
+    @HttpCode(HttpStatus.NOT_IMPLEMENTED)
+    alterarSenha(@CurrentUser() _user: AuthUserPayload, @Body() _dto: AlterarSenhaDto) {
+        throw new HttpException(
+            'Senha gerenciada pelo dbacesso — use o portal corporativo.',
+            HttpStatus.NOT_IMPLEMENTED,
+        );
     }
 
     @Post('logout')

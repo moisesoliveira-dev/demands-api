@@ -1,113 +1,160 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcryptjs';
-import { PrismaService } from '../prisma/prisma.service.js';
-import { toUser, type UserRecord } from '../prisma/mappers.js';
-import { resolvePermissions, type Permission } from '../common/permissions.js';
+import { ConfigService } from '@nestjs/config';
+import { UsuarioCorpService } from '../dbacesso/usuario.service.js';
+import { UsuarioSistemaCorpService } from '../dbacesso/usuario-sistema.service.js';
+import { MenuUsuarioCorpService } from '../dbacesso/menu-usuario.service.js';
+import { resolvePermissions, type Role } from '../common/permissions.js';
+import type { UsuarioRow } from '../dbacesso/types.js';
 
-export interface PublicUser {
-    id: string;
-    nome: string;
-    email: string;
-    cargo: string;
-    setor: string;
-    role: UserRecord['role'];
-    customPermissions?: Permission[];
-    avatar?: string;
-    avatarUrl?: string;
-    ativo: boolean;
-    criadoEm: string;
-    ultimoAcesso?: string;
-}
-
+/**
+ * Serviço de autenticação corporativa.
+ *
+ * Toda autenticação passa pelo banco `dbacesso` (somente leitura):
+ *   1. Localiza usuário pela coluna `usua_login`.
+ *   2. Confere a senha contra `usua_senha` (texto puro — padrão da empresa).
+ *   3. Valida que o usuário possui acesso ao sistema atual via `usuario_sistema`.
+ *   4. Carrega menus desse sistema para o usuário.
+ *   5. Emite JWT com payload corporativo.
+ *
+ * NÃO mantém contas locais. Se o usuário/sistema/menus não existirem no
+ * `dbacesso`, o login falha — sem bypass.
+ */
 @Injectable()
 export class AuthService {
+    private readonly logger = new Logger(AuthService.name);
+
     constructor(
-        private readonly prisma: PrismaService,
+        private readonly usuarios: UsuarioCorpService,
+        private readonly usuariosSistema: UsuarioSistemaCorpService,
+        private readonly menus: MenuUsuarioCorpService,
         private readonly jwt: JwtService,
+        private readonly cfg: ConfigService,
     ) { }
 
-    toPublic(u: UserRecord): PublicUser {
-        const { senhaHash: _s, ...rest } = u;
-        return rest;
+    private idSistema(): number {
+        const raw = this.cfg.get<string>('ID_SISTEMA');
+        const id = Number(raw);
+        if (!raw || !Number.isInteger(id) || id <= 0) {
+            this.logger.warn('401 login: ID_SISTEMA inválido ou ausente');
+            throw new UnauthorizedException(
+                'ID_SISTEMA não configurado no servidor — defina a variável de ambiente.',
+            );
+        }
+        return id;
     }
 
-    async login(email: string, senha: string) {
-        const row = await this.prisma.user.findFirst({
-            where: { email: { equals: email.toLowerCase() } },
-        });
-        if (!row || !row.ativo) throw new UnauthorizedException('Credenciais inválidas');
-
-        const ok = await bcrypt.compare(senha, row.senhaHash);
-        if (!ok) throw new UnauthorizedException('Credenciais inválidas');
-
-        const updated = await this.prisma.user.update({
-            where: { id: row.id },
-            data: { ultimoAcesso: new Date() },
-        });
-        const user = toUser(updated);
-
-        const token = await this.jwt.signAsync({
-            sub: user.id,
-            nome: user.nome,
-            email: user.email,
-            role: user.role,
-            customPermissions: user.customPermissions ?? [],
-        });
-
-        const publicUser = this.toPublic(user);
-        const permissions = resolvePermissions(user.role, user.customPermissions ?? []);
-        return { token, user: publicUser, permissions };
+    private throw401(message: string, details?: Record<string, unknown>): never {
+        if (details) {
+            this.logger.warn(`401 auth: ${message} ${JSON.stringify(details)}`);
+        } else {
+            this.logger.warn(`401 auth: ${message}`);
+        }
+        throw new UnauthorizedException(message);
     }
 
-    async me(userId: string) {
-        const row = await this.prisma.user.findUnique({ where: { id: userId } });
-        if (!row) throw new UnauthorizedException('Usuário não encontrado');
-        const u = toUser(row);
+    async login(usua_login: string, usua_senha: string) {
+        const idSistema = this.idSistema();
+
+        const user = await this.usuarios.findByLogin(usua_login);
+        if (!user) this.throw401('Credenciais inválidas', { usua_login, motivo: 'usuario_nao_encontrado' });
+
+        // padrão dgb_mes_wce: comparação em texto puro contra usua_senha
+        if (user.usua_senha !== usua_senha) {
+            this.throw401('Credenciais inválidas', { usua_login, usua_id: user.usua_id, motivo: 'senha_invalida' });
+        }
+
+        const userStatus = String(user.usua_status ?? '').trim();
+        if (userStatus !== '1') {
+            this.throw401('Usuário inativo', { usua_login, usua_id: user.usua_id, userStatus });
+        }
+
+        const acesso = await this.usuariosSistema.findOneByUserAndSystem(user.usua_id, idSistema);
+        const acessoStatus = Number((acesso as any)?.ussi_status ?? -1);
+        if (!acesso || acessoStatus !== 1) {
+            this.throw401(
+                'Você não tem permissão para acessar este sistema.',
+                { usua_login, usua_id: user.usua_id, idSistema, acessoStatus },
+            );
+        }
+
+        const menus = await this.menus.findMenus(user.usua_id, idSistema);
+        if (!menus.length) {
+            this.throw401(
+                'Usuário não possui menus cadastrados para este sistema.',
+                { usua_login, usua_id: user.usua_id, idSistema },
+            );
+        }
+
+        // Phase 1: qualquer usuário corporativo com menus = role admin local.
+        // TODO Phase 2: derivar role/permissions a partir do conjunto de menus.
+        const role: Role = 'admin';
+        const permissions = resolvePermissions(role, []);
+
+        const payload = {
+            sub: String(user.usua_id),
+            usua_id: user.usua_id,
+            usua_login: user.usua_login,
+            usua_nome: user.usua_nome,
+            usua_email: user.usua_email,
+            nome: user.usua_nome,
+            email: user.usua_email,
+            role,
+            customPermissions: [] as string[],
+        };
+
+        const token = await this.jwt.signAsync(payload);
+
         return {
-            user: this.toPublic(u),
-            permissions: resolvePermissions(u.role, u.customPermissions ?? []),
+            token,
+            user: this.toPublic(user),
+            menus,
+            permissions,
         };
     }
 
-    async atualizarMeuPerfil(
-        userId: string,
-        input: { nome?: string; email?: string; cargo?: string; avatar?: string; avatarUrl?: string },
-    ): Promise<PublicUser> {
-        const row = await this.prisma.user.findUnique({ where: { id: userId } });
-        if (!row) throw new UnauthorizedException('Usuário não encontrado');
+    async me(usuaId: string) {
+        const idSistema = this.idSistema();
+        const id = Number(usuaId);
+        if (!Number.isInteger(id)) this.throw401('Sessão inválida', { usuaId });
 
-        if (input.email && input.email.toLowerCase() !== row.email.toLowerCase()) {
-            const existing = await this.prisma.user.findFirst({
-                where: { email: input.email.toLowerCase(), NOT: { id: userId } },
-            });
-            if (existing) throw new UnauthorizedException('E-mail já está em uso');
+        const user = await this.usuarios.findById(id);
+        if (!user) this.throw401('Usuário não encontrado no dbacesso', { usuaId: id });
+
+        const acesso = await this.usuariosSistema.findOneByUserAndSystem(id, idSistema);
+        const acessoStatus = Number((acesso as any)?.ussi_status ?? -1);
+        if (!acesso || acessoStatus !== 1) {
+            this.throw401('Acesso ao sistema revogado', { usuaId: id, idSistema, acessoStatus });
         }
 
-        const updated = await this.prisma.user.update({
-            where: { id: userId },
-            data: {
-                ...(input.nome !== undefined && { nome: input.nome }),
-                ...(input.email !== undefined && { email: input.email.toLowerCase() }),
-                ...(input.cargo !== undefined && { cargo: input.cargo }),
-                ...(input.avatar !== undefined && { avatar: input.avatar }),
-                ...(input.avatarUrl !== undefined && { avatarUrl: input.avatarUrl }),
-            },
-        });
-        return this.toPublic(toUser(updated));
+        const menus = await this.menus.findMenus(id, idSistema);
+        const role: Role = 'admin';
+        const permissions = resolvePermissions(role, []);
+
+        return {
+            user: this.toPublic(user),
+            menus,
+            permissions,
+        };
     }
 
-    async alterarSenha(userId: string, senhaAtual: string, novaSenha: string): Promise<void> {
-        const row = await this.prisma.user.findUnique({ where: { id: userId } });
-        if (!row) throw new UnauthorizedException('Usuário não encontrado');
-
-        const ok = await bcrypt.compare(senhaAtual, row.senhaHash);
-        if (!ok) throw new UnauthorizedException('Senha atual inválida');
-
-        const novoHash = await bcrypt.hash(novaSenha, 10);
-        await this.prisma.user.update({
-            where: { id: userId },
-            data: { senhaHash: novoHash },
-        });
+    /** Remove campos sensíveis (senha, biometria) antes de devolver ao cliente. */
+    private toPublic(u: UsuarioRow) {
+        return {
+            id: String(u.usua_id),
+            usua_id: u.usua_id,
+            usua_login: u.usua_login,
+            usua_nome: u.usua_nome,
+            usua_email: u.usua_email,
+            usua_cpf: u.usua_cpf,
+            usua_foto: u.usua_foto,
+            usua_sfcs_idusuario: u.usua_sfcs_idusuario,
+            usua_status: u.usua_status,
+            // Aliases para compatibilidade com o frontend atual.
+            nome: u.usua_nome,
+            email: u.usua_email,
+            ativo: u.usua_status === '1',
+            role: 'admin' as const,
+        };
     }
 }
