@@ -34,8 +34,8 @@ export class DemandasController {
 
     @Post()
     @RequirePermissions('demandas.criar')
-    create(@Body() dto: CreateDemandaDto) {
-        return this.service.create(dto);
+    create(@Body() dto: CreateDemandaDto, @CurrentUser() user: AuthUserPayload) {
+        return this.service.create(dto, user);
     }
 
     @Patch(':id')

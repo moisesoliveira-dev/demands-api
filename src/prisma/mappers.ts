@@ -45,6 +45,8 @@ export interface DemandaRecord {
     atualizadoEm: string;
     ordem?: number;
     motivoBloqueio?: string;
+    criadorId?: string;
+    criadorNome?: string;
 }
 
 export interface HistoricoAuditoria {
@@ -174,6 +176,8 @@ export function toDemanda(p: PrismaDemanda): DemandaRecord {
         atualizadoEm: iso(p.atualizadoEm)!,
         ordem: p.ordem,
         motivoBloqueio: p.motivoBloqueio ?? undefined,
+        criadorId: (p as { criadorId?: string | null }).criadorId ?? undefined,
+        criadorNome: (p as { criadorNome?: string | null }).criadorNome ?? undefined,
     };
 }
 

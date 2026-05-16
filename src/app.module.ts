@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { SetoresModule } from './setores/setores.module.js';
 import { DemandasModule } from './demandas/demandas.module.js';
+import { DemandaConversaModule } from './demanda-conversa/demanda-conversa.module.js';
 import { NotificacoesModule } from './notificacoes/notificacoes.module.js';
 import { TriagemModule } from './triagem/triagem.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
@@ -27,6 +28,7 @@ import { PermissionsGuard } from './common/permissions.guard.js';
     UsersModule,
     SetoresModule,
     DemandasModule,
+    DemandaConversaModule,
     NotificacoesModule,
     TriagemModule,
     DashboardModule,

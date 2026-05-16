@@ -57,7 +57,7 @@ export class DemandasService {
         return toDemanda(row);
     }
 
-    async create(input: CreateDemandaDto): Promise<DemandaRecord> {
+    async create(input: CreateDemandaDto, actor?: AuthUserPayload): Promise<DemandaRecord> {
         const total = await this.prisma.demanda.count();
         const created = await this.prisma.demanda.create({
             data: {
@@ -68,6 +68,8 @@ export class DemandasService {
                 setor: input.setor,
                 responsavel: input.responsavel,
                 motivoBloqueio: input.motivoBloqueio,
+                criadorId: actor ? String(actor.sub) : null,
+                criadorNome: actor?.nome ?? actor?.usua_login ?? null,
                 ordem: total,
             },
         });

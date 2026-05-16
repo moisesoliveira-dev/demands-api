@@ -50,6 +50,8 @@ model Demanda {
   status          String   // 'pendente' | 'em_andamento' | 'concluido' | 'bloqueado'
   setor           String
   responsavel     String
+  criadorId       String?  // user.id (ou login dbacesso) de quem criou a demanda
+  criadorNome     String?  // snapshot p/ exibição (caso criador seja excluído)
   ordem           Int      @default(0)
   motivoBloqueio  String?
   criadoEm        DateTime @default(now())
@@ -57,11 +59,27 @@ model Demanda {
 
   historico       HistoricoAuditoria[]
   notificacoes    Notificacao[]
+  conversas       DemandaConversa[]
 
   @@index([status])
   @@index([setor])
   @@index([responsavel])
+  @@index([criadorId])
   @@index([ordem])
+}
+
+model DemandaConversa {
+  id          String   @id @default(cuid())
+  demandaId   String
+  autorId     String   // user.id ou login (estrável para guards)
+  autorNome   String
+  autorRole   String   // 'solicitante' | 'responsavel' | 'admin' | 'sistema' | 'ia'
+  conteudo    String
+  criadoEm    DateTime @default(now())
+
+  demanda     Demanda  @relation(fields: [demandaId], references: [id], onDelete: Cascade)
+
+  @@index([demandaId, criadoEm])
 }
 
 model HistoricoAuditoria {
