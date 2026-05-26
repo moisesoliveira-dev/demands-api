@@ -1,5 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ConversasService } from '../conversas/conversas.service.js';
+import { NotificacoesService } from '../notificacoes/notificacoes.service.js';
 import {
     toDemanda, toHistorico,
     type DemandStatus, type DemandaRecord, type HistoricoAuditoria,
@@ -15,9 +17,22 @@ function asArray(v: unknown): string[] | undefined {
     return String(v).split(',').filter(Boolean);
 }
 
+const STATUS_LABEL: Record<string, string> = {
+    pendente: 'Pendente',
+    em_andamento: 'Em andamento',
+    concluido: 'Concluída',
+    bloqueado: 'Bloqueada',
+};
+
 @Injectable()
 export class DemandasService {
-    constructor(private readonly prisma: PrismaService) { }
+    private readonly logger = new Logger(DemandasService.name);
+
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly conversas: ConversasService,
+        private readonly notificacoes: NotificacoesService,
+    ) { }
 
     async list(query: ListDemandasQueryDto = {}): Promise<DemandaRecord[]> {
         const status = asArray(query.status);
@@ -73,7 +88,51 @@ export class DemandasService {
                 ordem: total,
             },
         });
+
+        // ─── Sincroniza conversa (estilo WhatsApp) + notificações ────────
+        await this.sincronizarConversaECriacao(created, actor);
+
         return toDemanda(created);
+    }
+
+    /** Cria a conversa vinculada e dispara notificação ao responsável. */
+    private async sincronizarConversaECriacao(
+        demanda: { id: string; titulo: string; responsavel: string; criadorNome: string | null },
+        actor?: AuthUserPayload,
+    ) {
+        try {
+            await this.conversas.criarConversaDeDemanda({
+                demandaId: demanda.id,
+                tituloDemanda: demanda.titulo,
+                criadorId: actor?.sub ?? null,
+                criadorNome: actor?.nome ?? demanda.criadorNome ?? 'Sistema',
+                responsavelNome: demanda.responsavel,
+            });
+        } catch (err) {
+            this.logger.error(`Falha ao criar conversa da demanda ${demanda.id}: ${err}`);
+        }
+
+        // Notificação ao responsável (se for um User cadastrado e ≠ criador)
+        try {
+            const resp = await this.prisma.user.findFirst({
+                where: { nome: demanda.responsavel?.trim(), ativo: true },
+                select: { id: true },
+            });
+            if (resp && resp.id !== actor?.sub) {
+                await this.notificacoes.add({
+                    usuarioId: resp.id,
+                    demandaId: demanda.id,
+                    tipo: 'demanda_atribuida',
+                    titulo: 'Nova demanda atribuída a você',
+                    mensagem: `"${demanda.titulo}" foi atribuída a você por ${actor?.nome ?? 'Sistema'
+                        }.`,
+                    prioridade: 3,
+                    acao: `/demandas/${demanda.id}`,
+                });
+            }
+        } catch (err) {
+            this.logger.error(`Falha ao notificar responsável da demanda ${demanda.id}: ${err}`);
+        }
     }
 
     async update(id: string, input: UpdateDemandaDto, actor: AuthUserPayload): Promise<DemandaRecord> {
@@ -81,6 +140,8 @@ export class DemandasService {
         if (!existing) throw new NotFoundException('Demanda não encontrada');
 
         const statusChanged = input.status && input.status !== existing.status;
+        const responsavelChanged =
+            input.responsavel !== undefined && input.responsavel !== existing.responsavel;
 
         const [updated] = await this.prisma.$transaction([
             this.prisma.demanda.update({
@@ -109,7 +170,112 @@ export class DemandasService {
                 ]
                 : []),
         ]);
+
+        await this.sincronizarConversaEAtualizacao(updated, {
+            statusChanged: !!statusChanged,
+            statusAnterior: existing.status,
+            responsavelChanged,
+            responsavelAnterior: existing.responsavel,
+            motivo: input.motivoBloqueio,
+            actor,
+        });
+
         return toDemanda(updated);
+    }
+
+    /** Propaga mudanças de status/responsável para conversa + notificações. */
+    private async sincronizarConversaEAtualizacao(
+        demanda: { id: string; titulo: string; status: string; responsavel: string },
+        ctx: {
+            statusChanged: boolean;
+            statusAnterior: string;
+            responsavelChanged: boolean;
+            responsavelAnterior: string;
+            motivo?: string;
+            actor: AuthUserPayload;
+        },
+    ) {
+        const conversa = await this.conversas.obterConversaPorDemanda(demanda.id);
+
+        // Status mudou: post sistema + notificação
+        if (ctx.statusChanged && conversa) {
+            const labelDe = STATUS_LABEL[ctx.statusAnterior] ?? ctx.statusAnterior;
+            const labelPara = STATUS_LABEL[demanda.status] ?? demanda.status;
+            const motivoTxt = demanda.status === 'bloqueado' && ctx.motivo ? ` — motivo: ${ctx.motivo}` : '';
+            await this.conversas
+                .postarSistema(
+                    conversa.id,
+                    `Status alterado de "${labelDe}" para "${labelPara}" por ${ctx.actor.nome}${motivoTxt}.`,
+                )
+                .catch((e) => this.logger.error(`postarSistema (status): ${e}`));
+        }
+
+        // Responsável mudou: adiciona novo participante + post sistema + notifica
+        if (ctx.responsavelChanged) {
+            await this.conversas
+                .sincronizarResponsavelDemanda(demanda.id, demanda.responsavel)
+                .catch((e) => this.logger.error(`sincronizarResponsavelDemanda: ${e}`));
+            if (conversa) {
+                await this.conversas
+                    .postarSistema(
+                        conversa.id,
+                        `Responsável alterado de "${ctx.responsavelAnterior}" para "${demanda.responsavel}" por ${ctx.actor.nome}.`,
+                    )
+                    .catch((e) => this.logger.error(`postarSistema (responsavel): ${e}`));
+            }
+            try {
+                const novo = await this.prisma.user.findFirst({
+                    where: { nome: demanda.responsavel?.trim(), ativo: true },
+                    select: { id: true },
+                });
+                if (novo && novo.id !== ctx.actor.sub) {
+                    await this.notificacoes.add({
+                        usuarioId: novo.id,
+                        demandaId: demanda.id,
+                        tipo: 'demanda_atribuida',
+                        titulo: 'Demanda atribuída a você',
+                        mensagem: `"${demanda.titulo}" agora está sob sua responsabilidade.`,
+                        prioridade: 3,
+                        acao: `/demandas/${demanda.id}`,
+                    });
+                }
+            } catch (e) {
+                this.logger.error(`notificar novo responsável: ${e}`);
+            }
+        }
+
+        // Notificações por mudança de status (envia ao responsável atual)
+        if (ctx.statusChanged) {
+            try {
+                const resp = await this.prisma.user.findFirst({
+                    where: { nome: demanda.responsavel?.trim(), ativo: true },
+                    select: { id: true },
+                });
+                if (resp && resp.id !== ctx.actor.sub) {
+                    const tipoMap: Record<string, 'demanda_atualizada' | 'demanda_bloqueada' | 'demanda_concluida'> = {
+                        bloqueado: 'demanda_bloqueada',
+                        concluido: 'demanda_concluida',
+                    };
+                    const tipo = tipoMap[demanda.status] ?? 'demanda_atualizada';
+                    await this.notificacoes.add({
+                        usuarioId: resp.id,
+                        demandaId: demanda.id,
+                        tipo,
+                        titulo:
+                            tipo === 'demanda_bloqueada'
+                                ? 'Demanda bloqueada'
+                                : tipo === 'demanda_concluida'
+                                    ? 'Demanda concluída'
+                                    : 'Demanda atualizada',
+                        mensagem: `"${demanda.titulo}" agora está ${STATUS_LABEL[demanda.status] ?? demanda.status}.`,
+                        prioridade: demanda.status === 'bloqueado' ? 4 : 3,
+                        acao: `/demandas/${demanda.id}`,
+                    });
+                }
+            } catch (e) {
+                this.logger.error(`notificar status: ${e}`);
+            }
+        }
     }
 
     async updateStatus(id: string, dto: UpdateStatusDto, actor: AuthUserPayload): Promise<DemandaRecord> {

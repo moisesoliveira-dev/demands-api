@@ -571,4 +571,145 @@ export class ConversasService {
         });
         return users;
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // INTEGRAÇÃO COM DEMANDAS
+    // ───────────────────────────────────────────────────────────────────────
+    // Cada demanda tem AUTOMATICAMENTE uma conversa (tipo='demanda') vinculada.
+    // Participantes: criador + responsável (se conhecido pelo nome).
+    // Mensagens de sistema documentam o ciclo de vida → prova legal.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /** Resolve um nome de usuário para o User.id (snapshot tolerante a nulls). */
+    private async resolverUsuarioPorNome(nome?: string | null) {
+        if (!nome) return null;
+        const u = await this.prisma.user.findFirst({
+            where: { nome: nome.trim(), ativo: true },
+            select: { id: true, nome: true },
+        });
+        return u;
+    }
+
+    /** Recupera (ou retorna null) a conversa vinculada a uma demanda. */
+    async obterConversaPorDemanda(demandaId: string) {
+        return this.prisma.conversa.findUnique({ where: { demandaId } });
+    }
+
+    /**
+     * Cria a conversa vinculada a uma demanda recém-criada.
+     * Idempotente: se já existir, retorna a existente.
+     */
+    async criarConversaDeDemanda(input: {
+        demandaId: string;
+        tituloDemanda: string;
+        criadorId?: string | null;
+        criadorNome?: string | null;
+        responsavelNome?: string | null;
+    }) {
+        const existente = await this.obterConversaPorDemanda(input.demandaId);
+        if (existente) return existente;
+
+        const criadorId = input.criadorId ?? 'sistema';
+        const criadorNome = input.criadorNome ?? 'Sistema';
+        const responsavel = await this.resolverUsuarioPorNome(input.responsavelNome);
+
+        // Participantes: criador (se for um User válido) + responsável (se distinto)
+        const participantes: { usuarioId: string; usuarioNome: string; papel: string }[] = [];
+        const criadorEhUser = !!(await this.prisma.user.findUnique({
+            where: { id: criadorId },
+            select: { id: true },
+        }));
+        if (criadorEhUser) {
+            participantes.push({ usuarioId: criadorId, usuarioNome: criadorNome, papel: 'dono' });
+        }
+        if (responsavel && responsavel.id !== criadorId) {
+            participantes.push({
+                usuarioId: responsavel.id,
+                usuarioNome: responsavel.nome,
+                papel: 'admin',
+            });
+        }
+
+        const conversa = await this.prisma.conversa.create({
+            data: {
+                tipo: 'demanda',
+                titulo: `Demanda: ${input.tituloDemanda}`.slice(0, 200),
+                demandaId: input.demandaId,
+                criadorId,
+                criadorNome,
+                ultimaMensagemEm: new Date(),
+                participantes:
+                    participantes.length > 0 ? { create: participantes } : undefined,
+            },
+        });
+
+        await this.postarSistema(
+            conversa.id,
+            `Demanda criada por ${criadorNome}${input.responsavelNome ? ` · responsável: ${input.responsavelNome}` : ''
+            }.`,
+        );
+
+        this.logger.log(
+            `Conversa de demanda ${conversa.id} criada (demandaId=${input.demandaId}).`,
+        );
+        return conversa;
+    }
+
+    /**
+     * Posta uma mensagem de sistema em uma conversa (sem checagem de
+     * participante). Usado pelas transições de status/responsável de demanda.
+     */
+    async postarSistema(conversaId: string, conteudo: string) {
+        const criadoEm = new Date();
+        const hash = this.hashMensagem({
+            autorId: 'sistema',
+            criadoEm,
+            conteudo,
+            anexosHashes: [],
+        });
+
+        const m = await this.prisma.mensagem.create({
+            data: {
+                conversaId,
+                autorId: 'sistema',
+                autorNome: 'Sistema',
+                tipo: 'sistema',
+                conteudo,
+                hashConteudo: hash,
+                criadoEm,
+            },
+        });
+
+        await this.prisma.conversa.update({
+            where: { id: conversaId },
+            data: { ultimaMensagemEm: criadoEm },
+        });
+        return m;
+    }
+
+    /**
+     * Sincroniza participantes da conversa de demanda quando o responsável
+     * muda. O antigo responsável continua na conversa (histórico/prova) — só
+     * adicionamos o novo.
+     */
+    async sincronizarResponsavelDemanda(
+        demandaId: string,
+        novoResponsavelNome: string | null | undefined,
+    ) {
+        const conversa = await this.obterConversaPorDemanda(demandaId);
+        if (!conversa) return;
+        const novo = await this.resolverUsuarioPorNome(novoResponsavelNome);
+        if (!novo) return;
+
+        await this.prisma.conversaParticipante.upsert({
+            where: { conversaId_usuarioId: { conversaId: conversa.id, usuarioId: novo.id } },
+            create: {
+                conversaId: conversa.id,
+                usuarioId: novo.id,
+                usuarioNome: novo.nome,
+                papel: 'admin',
+            },
+            update: { saiuEm: null },
+        });
+    }
 }
