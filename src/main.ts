@@ -5,7 +5,16 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { cors: false });
+  const app = await NestFactory.create(AppModule, {
+    cors: false,
+    // Upload de vídeos até 100 MB (limites detalhados validados no service).
+    bodyParser: true,
+    rawBody: false,
+  });
+  // Multer (em FilesInterceptor) já lida com multipart; aumentamos json/urlencoded
+  // para segurança.
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', true);
 
   const corsOrigins = (process.env.CORS_ORIGIN ?? 'http://localhost:4200')
     .split(',')

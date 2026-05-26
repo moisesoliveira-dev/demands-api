@@ -140,3 +140,115 @@ model AppSetting {
 
   @@map("app_settings")
 }
+
+// ============================================================================
+// PLATAFORMA DE CONVERSAS (estilo WhatsApp)
+// ----------------------------------------------------------------------------
+// Requisito legal: tudo é PROVA. Mensagens NUNCA são deletadas fisicamente.
+// - apagadoEm marca exclusão lógica (UI esconde, banco preserva).
+// - hashConteudo = SHA-256(autorId|criadoEm|conteudo|anexosHashes) — qualquer
+//   adulteração no banco invalida o hash, permitindo auditoria.
+// - ipOrigem + userAgent capturam contexto do envio.
+// - autorNomeSnapshot preserva o nome mesmo se o usuário for renomeado/excluído.
+// - Anexos no MinIO usam o próprio sha256 como filename (imutável).
+// ============================================================================
+
+model Conversa {
+  id                String   @id @default(cuid())
+  tipo              String   // 'direto' (1:1) | 'grupo' | 'demanda'
+  titulo            String?  // null em 'direto' (computado dos participantes); obrigatório em 'grupo'
+  descricao         String?  // descrição de grupo
+  avatarUrl         String?
+  demandaId         String?  @unique  // se tipo='demanda', referencia Demanda
+  criadorId         String   // usuário que criou
+  criadorNome       String   // snapshot
+  criadoEm          DateTime @default(now())
+  ultimaMensagemEm  DateTime @default(now())  // para ordenação estilo WhatsApp
+  arquivada         Boolean  @default(false)
+
+  participantes     ConversaParticipante[]
+  mensagens         Mensagem[]
+
+  @@index([ultimaMensagemEm])
+  @@index([tipo])
+  @@index([demandaId])
+  @@index([criadorId])
+}
+
+model ConversaParticipante {
+  id              String    @id @default(cuid())
+  conversaId      String
+  usuarioId       String
+  usuarioNome     String    // snapshot
+  papel           String    @default("membro")  // 'dono' | 'admin' | 'membro'
+  entrouEm        DateTime  @default(now())
+  saiuEm          DateTime?  // null = ativo
+  ultimaLeituraEm DateTime?  // para contagem de não lidas
+  silenciado      Boolean   @default(false)
+
+  conversa        Conversa  @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+
+  @@unique([conversaId, usuarioId])
+  @@index([usuarioId])
+  @@index([conversaId])
+}
+
+model Mensagem {
+  id              String    @id @default(cuid())
+  conversaId      String
+  autorId         String
+  autorNome       String    // snapshot imutável
+  tipo            String    @default("texto")  // 'texto' | 'imagem' | 'video' | 'sistema'
+  conteudo        String    @default("")  // texto ou legenda do anexo
+  // — auditoria / provas legais —
+  hashConteudo    String    // SHA-256(autorId|criadoEm|conteudo|hashesAnexos)
+  ipOrigem        String?
+  userAgent       String?
+  // — controle de edição/exclusão (soft) —
+  criadoEm        DateTime  @default(now())
+  editadoEm       DateTime?
+  apagadoEm       DateTime?  // soft delete — registro preservado
+  // — análise IA (somente imagens) —
+  analisada       Boolean   @default(false)
+  analiseIA       String?   // JSON com descrição/OCR retornados pelo Vision
+
+  conversa        Conversa  @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  anexos          MensagemAnexo[]
+  leituras        MensagemLeitura[]
+
+  @@index([conversaId, criadoEm])
+  @@index([autorId])
+  @@index([criadoEm])
+}
+
+model MensagemAnexo {
+  id            String   @id @default(cuid())
+  mensagemId    String
+  tipo          String   // 'imagem' | 'video'
+  nomeOriginal  String   // nome do arquivo enviado pelo usuário (para download)
+  storageKey    String   // key no MinIO (== sha256 + extensão)
+  mimeType      String
+  bytes         Int
+  sha256        String   // hash do conteúdo binário — prova de integridade
+  largura       Int?
+  altura        Int?
+  duracaoMs     Int?     // para vídeos
+  criadoEm      DateTime @default(now())
+
+  mensagem      Mensagem @relation(fields: [mensagemId], references: [id], onDelete: Cascade)
+
+  @@index([mensagemId])
+  @@index([sha256])
+}
+
+model MensagemLeitura {
+  mensagemId String
+  usuarioId  String
+  lidaEm     DateTime @default(now())
+
+  mensagem   Mensagem @relation(fields: [mensagemId], references: [id], onDelete: Cascade)
+
+  @@id([mensagemId, usuarioId])
+  @@index([usuarioId])
+}
+
