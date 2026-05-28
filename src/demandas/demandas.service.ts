@@ -72,6 +72,28 @@ export class DemandasService {
         return toDemanda(row);
     }
 
+    async recorrentes(limit = 6): Promise<{ titulo: string; descricao: string; total: number }[]> {
+        const groups = await this.prisma.demanda.groupBy({
+            by: ['titulo'],
+            _count: { titulo: true },
+            orderBy: { _count: { titulo: 'desc' } },
+            having: { titulo: { _count: { gt: 1 } } },
+            take: limit,
+        });
+        if (!groups.length) return [];
+        const result = await Promise.all(
+            groups.map(async (g) => {
+                const example = await this.prisma.demanda.findFirst({
+                    where: { titulo: g.titulo },
+                    orderBy: { criadoEm: 'desc' },
+                    select: { titulo: true, descricao: true },
+                });
+                return { titulo: g.titulo, descricao: example?.descricao ?? '', total: g._count.titulo };
+            }),
+        );
+        return result;
+    }
+
     async create(input: CreateDemandaDto, actor?: AuthUserPayload): Promise<DemandaRecord> {
         const total = await this.prisma.demanda.count();
         const created = await this.prisma.demanda.create({

@@ -45,6 +45,11 @@ export class AiController {
 
     // ─── Triagem conversacional ──────────────────────────────────────────────
 
+    @Get('triagem/recorrentes')
+    triagemRecorrentes(@Request() req: AuthedRequest) {
+        return this.ai.proxy('/api/triagem/recorrentes', 'GET', bearerOf(req));
+    }
+
     @Get('triagem/sessions')
     listTriagemSessions(@Request() req: AuthedRequest) {
         return this.ai.proxy('/api/triagem/sessions', 'GET', bearerOf(req));

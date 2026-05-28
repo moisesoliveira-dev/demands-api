@@ -20,6 +20,12 @@ export class DemandasController {
         return this.service.list(query);
     }
 
+    @Get('recorrentes')
+    @RequirePermissions('demandas.visualizar')
+    recorrentes() {
+        return this.service.recorrentes();
+    }
+
     @Get(':id')
     @RequirePermissions('demandas.visualizar')
     byId(@Param('id') id: string) {
