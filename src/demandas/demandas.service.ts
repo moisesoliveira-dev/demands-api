@@ -185,7 +185,7 @@ export class DemandasService {
 
     /** Propaga mudanças de status/responsável para conversa + notificações. */
     private async sincronizarConversaEAtualizacao(
-        demanda: { id: string; titulo: string; status: string; responsavel: string },
+        demanda: { id: string; titulo: string; status: string; responsavel: string; criadorId?: string | null; criadorNome?: string | null },
         ctx: {
             statusChanged: boolean;
             statusAnterior: string;
@@ -195,10 +195,37 @@ export class DemandasService {
             actor: AuthUserPayload;
         },
     ) {
+        // ── Transição → concluido: apaga a conversa ────────────────────────
+        if (ctx.statusChanged && demanda.status === 'concluido' && ctx.statusAnterior !== 'concluido') {
+            await this.conversas
+                .excluirConversaDeDemanda(demanda.id)
+                .catch((e) => this.logger.error(`excluirConversa (concluido): ${e}`));
+            // Notifica e encerra — sem mensagem de sistema (conversa será deletada)
+        }
+
+        // ── Transição DE concluido → outro: recria a conversa ─────────────
+        if (ctx.statusChanged && ctx.statusAnterior === 'concluido' && demanda.status !== 'concluido') {
+            try {
+                const novaConversa = await this.conversas.criarConversaDeDemanda({
+                    demandaId: demanda.id,
+                    tituloDemanda: demanda.titulo,
+                    criadorId: demanda.criadorId,
+                    criadorNome: demanda.criadorNome,
+                    responsavelNome: demanda.responsavel,
+                });
+                await this.conversas.postarSistema(
+                    novaConversa.id,
+                    `Demanda reaberta por ${ctx.actor.nome}. O solicitante foi notificado.`,
+                );
+            } catch (e) {
+                this.logger.error(`recriarConversa (reabrir): ${e}`);
+            }
+        }
+
         const conversa = await this.conversas.obterConversaPorDemanda(demanda.id);
 
-        // Status mudou: post sistema + notificação
-        if (ctx.statusChanged && conversa) {
+        // Status mudou: post sistema + notificação (não para concluido — conversa foi apagada)
+        if (ctx.statusChanged && conversa && demanda.status !== 'concluido') {
             const labelDe = STATUS_LABEL[ctx.statusAnterior] ?? ctx.statusAnterior;
             const labelPara = STATUS_LABEL[demanda.status] ?? demanda.status;
             const motivoTxt = demanda.status === 'bloqueado' && ctx.motivo ? ` — motivo: ${ctx.motivo}` : '';

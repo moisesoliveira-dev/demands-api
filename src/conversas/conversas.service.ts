@@ -822,4 +822,15 @@ export class ConversasService implements OnModuleInit {
             update: { saiuEm: null },
         });
     }
+
+    /**
+     * Remove fisicamente a conversa vinculada a uma demanda (ao finalizar/concluir).
+     * ON DELETE CASCADE no Prisma apaga mensagens, participantes e anexos.
+     */
+    async excluirConversaDeDemanda(demandaId: string) {
+        const conversa = await this.obterConversaPorDemanda(demandaId);
+        if (!conversa) return;
+        await this.prisma.conversa.delete({ where: { id: conversa.id } });
+        this.logger.log(`Conversa ${conversa.id} excluída (demanda ${demandaId} concluída).`);
+    }
 }
