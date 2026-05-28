@@ -120,14 +120,33 @@ export class ConversasService implements OnModuleInit {
             },
         });
 
+        // Defensivo: oculta conversas vinculadas a demandas concluídas
+        // (a conversa deveria ter sido apagada no concluir, mas garantimos aqui).
+        const demandaIds = participacoes
+            .map((p) => p.conversa.demandaId)
+            .filter((id): id is string => !!id);
+        const concluidasIds = demandaIds.length
+            ? new Set(
+                (
+                    await this.prisma.demanda.findMany({
+                        where: { id: { in: demandaIds }, status: 'concluido' },
+                        select: { id: true },
+                    })
+                ).map((d) => d.id),
+            )
+            : new Set<string>();
+        const visiveis = participacoes.filter(
+            (p) => !p.conversa.demandaId || !concluidasIds.has(p.conversa.demandaId),
+        );
+
         // Ordena pela última mensagem (campo desnormalizado em Conversa.ultimaMensagemEm)
-        participacoes.sort(
+        visiveis.sort(
             (a, b) =>
                 b.conversa.ultimaMensagemEm.getTime() - a.conversa.ultimaMensagemEm.getTime(),
         );
 
         return Promise.all(
-            participacoes.map(async (p) => {
+            visiveis.map(async (p) => {
                 const naoLidas = await this.prisma.mensagem.count({
                     where: {
                         conversaId: p.conversaId,
@@ -617,8 +636,14 @@ export class ConversasService implements OnModuleInit {
      * Reexecutado a cada startup — idempotente, nunca bloqueia a inicialização.
      * Repara conversas antigas cujos participantes não foram criados.
      */
+    /**
+     * Ao iniciar: cria conversas retroativamente para demandas sem conversa.
+     * Importante: ignora demandas concluídas — a conversa dessas é
+     * deliberadamente apagada ao concluir e não deve ser recriada no boot.
+     */
     async backfillConversasDemanda() {
         const demandas = await this.prisma.demanda.findMany({
+            where: { status: { not: 'concluido' } },
             select: { id: true, titulo: true, criadorId: true, criadorNome: true, responsavel: true },
         });
         if (demandas.length === 0) return;

@@ -61,6 +61,11 @@ export class AiController {
         return this.ai.proxy('/api/triagem/sessions', 'POST', bearerOf(req), body);
     }
 
+    @Get('triagem/sessions/by-demanda/:demandaId')
+    getTriagemSessionByDemanda(@Request() req: AuthedRequest, @Param('demandaId') demandaId: string) {
+        return this.ai.proxy(`/api/triagem/sessions/by-demanda/${demandaId}`, 'GET', bearerOf(req));
+    }
+
     @Get('triagem/sessions/:id')
     getTriagemSession(@Request() req: AuthedRequest, @Param('id') id: string) {
         return this.ai.proxy(`/api/triagem/sessions/${id}`, 'GET', bearerOf(req));
