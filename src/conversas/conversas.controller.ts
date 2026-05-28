@@ -20,7 +20,6 @@ import { ConversasService } from './conversas.service.js';
 import {
     AdicionarParticipanteDto,
     AtualizarConversaDto,
-    CreateConversaDto,
     EnviarMensagemDto,
 } from './dto/conversas.dto.js';
 import { CurrentUser, type AuthUserPayload } from '../common/auth.decorators.js';
@@ -47,10 +46,7 @@ export class ConversasController {
         return this.service.listarUsuariosParaChat(user);
     }
 
-    @Post()
-    criar(@Body() dto: CreateConversaDto, @CurrentUser() user: AuthUserPayload) {
-        return this.service.criarConversa(dto, user);
-    }
+    // Criação manual de conversas desativada — conversas são criadas automaticamente via demandas.
 
     @Get(':id')
     obter(@Param('id') id: string, @CurrentUser() user: AuthUserPayload) {
