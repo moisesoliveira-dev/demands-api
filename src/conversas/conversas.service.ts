@@ -4,6 +4,7 @@ import {
     Injectable,
     Logger,
     NotFoundException,
+    OnModuleInit,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -50,13 +51,20 @@ export interface RequestContext {
  *  - `autorNome` é snapshot imutável (não muda se o user for renomeado).
  */
 @Injectable()
-export class ConversasService {
+export class ConversasService implements OnModuleInit {
     private readonly logger = new Logger(ConversasService.name);
 
     constructor(
         private readonly prisma: PrismaService,
         private readonly s3: S3Service,
     ) { }
+
+    /** Ao iniciar: cria conversas retroativamente para demandas sem conversa. */
+    async onModuleInit() {
+        this.backfillConversasDemanda().catch((e) =>
+            this.logger.error(`Backfill conversas demanda falhou: ${e}`),
+        );
+    }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -580,19 +588,123 @@ export class ConversasService {
     // Mensagens de sistema documentam o ciclo de vida → prova legal.
     // ═══════════════════════════════════════════════════════════════════════
 
-    /** Resolve um nome de usuário para o User.id (snapshot tolerante a nulls). */
+    /** Resolve um nome para User — case-insensitive, aceita variações parciais. */
     private async resolverUsuarioPorNome(nome?: string | null) {
         if (!nome) return null;
-        const u = await this.prisma.user.findFirst({
-            where: { nome: nome.trim(), ativo: true },
+        const q = nome.trim();
+        // 1) Tenta match exato case-insensitive
+        let u = await this.prisma.user.findFirst({
+            where: { nome: { equals: q, mode: 'insensitive' }, ativo: true },
             select: { id: true, nome: true },
         });
-        return u;
+        // 2) Fallback: busca por e-mail (caso o campo responsavel guarde e-mail)
+        if (!u) {
+            u = await this.prisma.user.findFirst({
+                where: { email: { equals: q, mode: 'insensitive' }, ativo: true },
+                select: { id: true, nome: true },
+            });
+        }
+        return u ?? null;
     }
 
     /** Recupera (ou retorna null) a conversa vinculada a uma demanda. */
     async obterConversaPorDemanda(demandaId: string) {
         return this.prisma.conversa.findUnique({ where: { demandaId } });
+    }
+
+    /**
+     * Backfill: garante que toda Demanda tem Conversa E participantes corretos.
+     * Reexecutado a cada startup — idempotente, nunca bloqueia a inicialização.
+     * Repara conversas antigas cujos participantes não foram criados.
+     */
+    async backfillConversasDemanda() {
+        const demandas = await this.prisma.demanda.findMany({
+            select: { id: true, titulo: true, criadorId: true, criadorNome: true, responsavel: true },
+        });
+        if (demandas.length === 0) return;
+
+        let criadas = 0;
+        let reparadas = 0;
+        for (const d of demandas) {
+            try {
+                const existente = await this.obterConversaPorDemanda(d.id);
+                if (!existente) {
+                    await this.criarConversaDeDemanda({
+                        demandaId: d.id,
+                        tituloDemanda: d.titulo,
+                        criadorId: d.criadorId,
+                        criadorNome: d.criadorNome,
+                        responsavelNome: d.responsavel,
+                    });
+                    criadas++;
+                } else {
+                    // Garante que criador e responsável estejam na conversa
+                    const antes = await this.prisma.conversaParticipante.count({
+                        where: { conversaId: existente.id },
+                    });
+                    await this.garantirParticipantesDemanda(
+                        existente.id,
+                        d.criadorId,
+                        d.criadorNome,
+                        d.responsavel,
+                    );
+                    const depois = await this.prisma.conversaParticipante.count({
+                        where: { conversaId: existente.id },
+                    });
+                    if (depois > antes) reparadas++;
+                }
+            } catch (e) {
+                this.logger.error(`Backfill demanda ${d.id}: ${e}`);
+            }
+        }
+        if (criadas || reparadas) {
+            this.logger.log(
+                `Backfill concluído: ${criadas} conversa(s) criada(s), ${reparadas} reparada(s).`,
+            );
+        }
+    }
+
+    /**
+     * Garante (via upsert) que o criador e o responsável da demanda sejam
+     * participantes ativos da conversa. É idempotente — seguro chamar várias vezes.
+     *
+     * Importante: `usuarioId` aqui não precisa existir na tabela `User` (não há
+     * FK). Ele só precisa bater com `auth.sub` para o listarConversas funcionar.
+     */
+    async garantirParticipantesDemanda(
+        conversaId: string,
+        criadorId: string | null | undefined,
+        criadorNome: string | null | undefined,
+        responsavelNome: string | null | undefined,
+    ) {
+        // 1) Criador como 'dono' (sempre que tivermos o id)
+        if (criadorId && criadorId !== 'sistema') {
+            await this.prisma.conversaParticipante.upsert({
+                where: { conversaId_usuarioId: { conversaId, usuarioId: criadorId } },
+                create: {
+                    conversaId,
+                    usuarioId: criadorId,
+                    usuarioNome: criadorNome ?? 'Usuário',
+                    papel: 'dono',
+                },
+                update: { saiuEm: null },
+            });
+        }
+
+        // 2) Responsável como 'admin' (só se for um User local distinto)
+        const responsavel = await this.resolverUsuarioPorNome(responsavelNome);
+        if (responsavel && responsavel.id !== criadorId) {
+            await this.prisma.conversaParticipante.upsert({
+                where: { conversaId_usuarioId: { conversaId, usuarioId: responsavel.id } },
+                create: {
+                    conversaId,
+                    usuarioId: responsavel.id,
+                    usuarioNome: responsavel.nome,
+                    papel: 'admin',
+                },
+                update: { saiuEm: null },
+            });
+        }
     }
 
     /**
@@ -607,28 +719,19 @@ export class ConversasService {
         responsavelNome?: string | null;
     }) {
         const existente = await this.obterConversaPorDemanda(input.demandaId);
-        if (existente) return existente;
+        if (existente) {
+            // Garante participantes mesmo em conversa pré-existente.
+            await this.garantirParticipantesDemanda(
+                existente.id,
+                input.criadorId,
+                input.criadorNome,
+                input.responsavelNome,
+            );
+            return existente;
+        }
 
         const criadorId = input.criadorId ?? 'sistema';
         const criadorNome = input.criadorNome ?? 'Sistema';
-        const responsavel = await this.resolverUsuarioPorNome(input.responsavelNome);
-
-        // Participantes: criador (se for um User válido) + responsável (se distinto)
-        const participantes: { usuarioId: string; usuarioNome: string; papel: string }[] = [];
-        const criadorEhUser = !!(await this.prisma.user.findUnique({
-            where: { id: criadorId },
-            select: { id: true },
-        }));
-        if (criadorEhUser) {
-            participantes.push({ usuarioId: criadorId, usuarioNome: criadorNome, papel: 'dono' });
-        }
-        if (responsavel && responsavel.id !== criadorId) {
-            participantes.push({
-                usuarioId: responsavel.id,
-                usuarioNome: responsavel.nome,
-                papel: 'admin',
-            });
-        }
 
         const conversa = await this.prisma.conversa.create({
             data: {
@@ -638,10 +741,17 @@ export class ConversasService {
                 criadorId,
                 criadorNome,
                 ultimaMensagemEm: new Date(),
-                participantes:
-                    participantes.length > 0 ? { create: participantes } : undefined,
             },
         });
+
+        // Adiciona participantes via upsert (sem verificar tabela User —
+        // usuarioId aqui é o `auth.sub` do JWT, não precisa ser User local).
+        await this.garantirParticipantesDemanda(
+            conversa.id,
+            input.criadorId,
+            input.criadorNome,
+            input.responsavelNome,
+        );
 
         await this.postarSistema(
             conversa.id,

@@ -115,7 +115,7 @@ export class DemandasService {
         // Notificação ao responsável (se for um User cadastrado e ≠ criador)
         try {
             const resp = await this.prisma.user.findFirst({
-                where: { nome: demanda.responsavel?.trim(), ativo: true },
+                where: { nome: { equals: demanda.responsavel?.trim(), mode: 'insensitive' }, ativo: true },
                 select: { id: true },
             });
             if (resp && resp.id !== actor?.sub) {
